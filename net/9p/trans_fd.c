@@ -30,6 +30,7 @@
 #include <net/9p/transport.h>
 
 #include <linux/syscalls.h> /* killme */
+#include <linux/wait.h>
 
 #define P9_PORT 564
 #define MAX_SOCK_BUF (1024*1024)
@@ -728,6 +729,17 @@ static int p9_fd_cancelled(struct p9_client *client, struct p9_req_t *req)
 		return 0;
 	}
 
+	/* If the request is been sent to the server, we need to wait for the
+	 * job to finish.
+	 */
+	if (req->status == REQ_STATUS_SENT) {
+		spin_unlock(&m->req_lock);
+		p9_debug(P9_DEBUG_TRANS, "client %p req %p wait done\n",
+			 client, req);
+		wait_event(req->wq, req->status >= REQ_STATUS_RCVD);
+
+		return 0;
+	}
 	/* we haven't received a response for oldreq,
 	 * remove it from the list.
 	 */
